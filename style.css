@@ -168,9 +168,8 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 20px;
+  padding: 14px 20px 8px 20px;
   background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .user-avatar {
@@ -201,6 +200,32 @@ body {
   font-weight: bold;
 }
 
+/* Shift Timer Widget Styling */
+.shift-timer-card {
+  margin: 6px 16px 14px 16px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.shift-timer-label {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.shift-timer-digits {
+  font-family: monospace;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #38bdf8;
+  letter-spacing: 1px;
+}
+
 .sidebar-action {
   padding: 14px 16px;
 }
@@ -221,6 +246,11 @@ body {
   gap: 8px;
   transition: var(--transition);
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.btn-create-tab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
 }
 
 .nav-menu {

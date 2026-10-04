@@ -1,11 +1,11 @@
 /**
  * Sprinto Dynamic CMS Controller
- * Automated Google Drive Uploads, Multi-Role Auth Guard & Centralized Admin API Sync
+ * Automated Google Drive Uploads, Multi-Role Auth Guard, Centralized API Sync,
+ * and 8-Hour Synchronized Shift Expiration (08:00, 16:00, 00:00).
  */
 
-// إعدادات النظام المركزية
 const CONFIG = {
-  // 🔴 ضع رابط الـ Web App الخاص بك هنا ليعمل تلقائياً لجميع المستخدمين والموظفين:
+  // 🔴 ضع رابط الـ Web App الخاص بك هنا ليعمل تلقائياً لجميع المستخدمين:
   DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbx_YOUR_SCRIPT_ID_HERE/exec',
   ADMIN_EMAIL: 'sprinto.coworkingspace@gmail.com'
 };
@@ -16,7 +16,8 @@ const STATE = {
   schemas: {},
   currentSheet: null,
   pendingImages: {},
-  guardInterval: null
+  guardInterval: null,
+  shiftTimerInterval: null
 };
 
 // DOM References
@@ -32,6 +33,7 @@ const DOM = {
   userDisplayName: document.getElementById('userDisplayName'),
   userRoleBadge: document.getElementById('userRoleBadge'),
   userAvatarChar: document.getElementById('userAvatarChar'),
+  shiftCountdown: document.getElementById('shiftCountdown'),
   adminMenuSection: document.getElementById('adminMenuSection'),
   btnStaffManagement: document.getElementById('btnStaffManagement'),
   staffTableBody: document.getElementById('staffTableBody'),
@@ -75,14 +77,17 @@ const DOM = {
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
 
-  // ضبط حقل الرابط الحالي
   if (DOM.apiUrlInput) {
     DOM.apiUrlInput.value = STATE.apiUrl;
   }
 
-  // فحص الجلسة عند بدء التشغيل
+  // التحقق من صلاحية الشيفت والجلسة عند الفتح
   if (STATE.currentUser) {
-    verifySessionAndLaunch();
+    if (isShiftExpired()) {
+      handleShiftExpiryLogout('انتهت فترة الشيفت السابقة (8 ساعات). يرجى تسجيل الدخول مجدداً.');
+    } else {
+      verifySessionAndLaunch();
+    }
   } else {
     showAuthGateway();
   }
@@ -106,10 +111,9 @@ function setupEventListeners() {
     DOM.loginForm.classList.remove('active');
   });
 
-  // Authentication
   DOM.loginForm.addEventListener('submit', handleLogin);
   DOM.registerForm.addEventListener('submit', handleRegisterApply);
-  DOM.btnLogout.addEventListener('click', handleLogout);
+  DOM.btnLogout.addEventListener('click', () => handleLogout('تم تسجيل الخروج بنجاح'));
 
   // Staff Management (Admin Only)
   DOM.btnStaffManagement.addEventListener('click', () => {
@@ -128,22 +132,20 @@ function setupEventListeners() {
     DOM.pageDesc.textContent = 'أضف قسماً مخصصاً بأعمدة وأنواع بيانات جديدة بالكامل.';
   });
 
-  // Settings: مسموح للأدمن فقط برؤيتها والتعديل عليها
+  // Settings: مسموح للأدمن فقط
   DOM.btnSettingsNav.addEventListener('click', () => {
     if (STATE.currentUser && STATE.currentUser.email.toLowerCase() === CONFIG.ADMIN_EMAIL.toLowerCase()) {
       switchView('settings');
       DOM.pageTitle.textContent = 'إعدادات ربط النظام والـ API';
       DOM.pageDesc.textContent = 'تعديل وتحديث رابط Google Apps Script المركزي للنظام.';
     } else {
-      showToast('عفواً، تعديل رابط الـ API متاح حصرياً لحساب الأدمن الرئيسي فقط!', 'error');
+      showToast('عفواً، تعديل رابط الـ API متاح حصرياً لحساب الأدمن فقط!', 'error');
     }
   });
 
-  // حفظ رابط الـ API المركزي للأدمن
+  // حفظ رابط API المركزي
   DOM.apiSettingsForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-
-    // التحقق من صلاحية الأدمن
     if (!STATE.currentUser || STATE.currentUser.email.toLowerCase() !== CONFIG.ADMIN_EMAIL.toLowerCase()) {
       showToast('لا تملك الصلاحية لتغيير رابط الـ API.', 'error');
       return;
@@ -157,22 +159,11 @@ function setupEventListeners() {
 
     STATE.apiUrl = newUrl;
     localStorage.setItem('sprinto_api_url', newUrl);
-
-    setLoading(true, 'جاري مزامنة وتثبيت الرابط الجديد...');
-    try {
-      showToast('تم تحديث وتثبيت رابط الـ API بنجاح للأدمن والسيستم!', 'success');
-      fetchSchemasAndInit();
-    } catch (err) {
-      showToast('تم الحفظ محلياً: ' + err.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  });
-
-  DOM.btnTestApi.addEventListener('click', () => {
+    showToast('تم حفظ وتحديث الرابط بنجاح!', 'success');
     fetchSchemasAndInit();
   });
 
+  DOM.btnTestApi.addEventListener('click', () => fetchSchemasAndInit());
   DOM.btnAddColumnRow.addEventListener('click', addColumnRow);
 
   DOM.columnsList.addEventListener('click', (e) => {
@@ -193,8 +184,84 @@ function setupEventListeners() {
   });
 }
 
+// ================= نظام حساب الشيفت كل 8 ساعات (08:00, 16:00, 00:00) =================
+
+/**
+ * حساب موعد انتهاء الوردية القادم بدقة
+ */
+function getNextShiftEndTime() {
+  const now = new Date();
+  const shiftHours = [0, 8, 16];
+
+  for (let hour of shiftHours) {
+    const shiftDate = new Date(now);
+    shiftDate.setHours(hour, 0, 0, 0);
+    if (shiftDate > now) {
+      return shiftDate.getTime();
+    }
+  }
+
+  const tomorrowMidnight = new Date(now);
+  tomorrowMidnight.setDate(now.getDate() + 1);
+  tomorrowMidnight.setHours(0, 0, 0, 0);
+  return tomorrowMidnight.getTime();
+}
+
+/**
+ * فحص هل انتهى وقت الشيفت المخزن أم لا
+ */
+function isShiftExpired() {
+  const shiftExpiry = localStorage.getItem('sprinto_shift_expiry');
+  if (!shiftExpiry) return false;
+  return Date.now() >= parseInt(shiftExpiry, 10);
+}
+
+/**
+ * بدء مراقبة وتحديث عداد الشيفت كل ثانية
+ */
+function startShiftManager() {
+  clearInterval(STATE.shiftTimerInterval);
+
+  let shiftExpiry = localStorage.getItem('sprinto_shift_expiry');
+  if (!shiftExpiry || Date.now() >= parseInt(shiftExpiry, 10)) {
+    shiftExpiry = getNextShiftEndTime();
+    localStorage.setItem('sprinto_shift_expiry', shiftExpiry.toString());
+  } else {
+    shiftExpiry = parseInt(shiftExpiry, 10);
+  }
+
+  STATE.shiftTimerInterval = setInterval(() => {
+    const diff = shiftExpiry - Date.now();
+
+    if (diff <= 0) {
+      clearInterval(STATE.shiftTimerInterval);
+      handleShiftExpiryLogout('⏰ انتهت فترة الوردية (8 ساعات). تم تسجيل الخروج لجميع المستخدمين للتأمين.');
+      return;
+    }
+
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+    const pad = (n) => n.toString().padStart(2, '0');
+    if (DOM.shiftCountdown) {
+      DOM.shiftCountdown.textContent = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    }
+  }, 1000);
+}
+
+function handleShiftExpiryLogout(message) {
+  clearInterval(STATE.shiftTimerInterval);
+  clearInterval(STATE.guardInterval);
+  localStorage.removeItem('sprinto_shift_expiry');
+  handleLogout(message, true);
+}
+
+// ================= إدارة الجلسات والمصادقة =================
+
 function showAuthGateway() {
   clearInterval(STATE.guardInterval);
+  clearInterval(STATE.shiftTimerInterval);
   DOM.authWrapper.style.display = 'flex';
   DOM.dashboardLayout.style.display = 'none';
 }
@@ -207,27 +274,26 @@ function showDashboard(user) {
   DOM.userRoleBadge.textContent = user.role || 'Staff';
   DOM.userAvatarChar.textContent = (user.name || 'U').charAt(0).toUpperCase();
 
-  // إظهار الأدوات الخاصة بالأدمن فقط
   const isAdmin = user.email.toLowerCase() === CONFIG.ADMIN_EMAIL.toLowerCase() || user.role === 'Admin';
   if (isAdmin) {
     DOM.adminMenuSection.style.display = 'block';
     DOM.btnSettingsNav.style.display = 'flex';
   } else {
     DOM.adminMenuSection.style.display = 'none';
-    DOM.btnSettingsNav.style.display = 'none'; // إخفاء إعدادات الـ API تماماً عن الموظفين العاديين
+    DOM.btnSettingsNav.style.display = 'none';
   }
 
   fetchSchemasAndInit();
   startSessionLiveGuard();
+  startShiftManager();
 }
 
-// تسجيل الدخول مع حماية طوارئ للأدمن
 async function handleLogin(e) {
   e.preventDefault();
   const email = DOM.loginEmail.value.trim();
   const password = DOM.loginPassword.value.trim();
 
-  // إذا كان الرابط غير مضبوط وداخل بإيميل الأدمن المعتمد، يفتح له فوراً لتعديل الرابط
+  // طوارئ الأدمن إذا كان الرابط غير مضبوط
   if ((!STATE.apiUrl || STATE.apiUrl.includes('YOUR_SCRIPT_ID_HERE')) && email.toLowerCase() === CONFIG.ADMIN_EMAIL.toLowerCase()) {
     const adminUser = {
       name: 'الأدمن الرئيسي',
@@ -237,14 +303,15 @@ async function handleLogin(e) {
     };
     STATE.currentUser = adminUser;
     localStorage.setItem('sprinto_user', JSON.stringify(adminUser));
-    showToast('تم تسجيل الدخول في وضع الطوارئ (Emergency Mode) لضبط رابط الـ API ⚙️', 'success');
+    localStorage.setItem('sprinto_shift_expiry', getNextShiftEndTime().toString());
+    showToast('تم الدخول كأدمن في وضع الطوارئ لضبط الرابط ⚙️', 'success');
     showDashboard(adminUser);
     switchView('settings');
     return;
   }
 
   if (!STATE.apiUrl || STATE.apiUrl.includes('YOUR_SCRIPT_ID_HERE')) {
-    showToast('النظام غير مربوط بالـ API حالياً. يرجى انتظار قيام الأدمن بضبط الرابط.', 'error');
+    showToast('النظام غير مربوط بالـ API حالياً. بانتظار إدخال الرابط من الأدمن.', 'error');
     return;
   }
 
@@ -265,6 +332,8 @@ async function handleLogin(e) {
     if (json.status === 'success') {
       STATE.currentUser = json.user;
       localStorage.setItem('sprinto_user', JSON.stringify(json.user));
+      localStorage.setItem('sprinto_shift_expiry', getNextShiftEndTime().toString());
+
       showToast(`أهلاً بك يا ${json.user.name} 👋`, 'success');
       DOM.loginForm.reset();
       showDashboard(json.user);
@@ -278,7 +347,6 @@ async function handleLogin(e) {
   }
 }
 
-// طلب التوظيف
 async function handleRegisterApply(e) {
   e.preventDefault();
   if (!STATE.apiUrl || STATE.apiUrl.includes('YOUR_SCRIPT_ID_HERE')) {
@@ -319,7 +387,6 @@ async function handleRegisterApply(e) {
   }
 }
 
-// الحماية اللحظية: طرد الموظف إن تم حذفه من الشيت
 function startSessionLiveGuard() {
   clearInterval(STATE.guardInterval);
   STATE.guardInterval = setInterval(async () => {
@@ -336,26 +403,34 @@ function startSessionLiveGuard() {
       const json = await res.json();
       if (json.status === 'terminated') {
         clearInterval(STATE.guardInterval);
-        handleLogout();
-        alert('⚠️️ تنبيه أمني: تم إيقاف أو فصل حسابك من قبل الأدمن في Google Sheets.');
+        handleLogout('⚠️ تم إيقاف أو فصل حسابك من قبل الأدمن في Google Sheets.', true);
       }
     } catch (e) { }
-  }, 45000);
+  }, 40000);
 }
 
 function verifySessionAndLaunch() {
   showDashboard(STATE.currentUser);
 }
 
-function handleLogout() {
+function handleLogout(message = 'تم تسجيل الخروج', isAlert = false) {
   clearInterval(STATE.guardInterval);
+  clearInterval(STATE.shiftTimerInterval);
   STATE.currentUser = null;
   localStorage.removeItem('sprinto_user');
-  showToast('تم تسجيل الخروج بنجاح', 'success');
+  localStorage.removeItem('sprinto_shift_expiry');
+
+  if (isAlert) {
+    alert(message);
+  } else {
+    showToast(message, 'success');
+  }
+
   showAuthGateway();
 }
 
-// قائمة الموظفين (للأدمن فقط)
+// ================= إدارة الموظفين (خاص بالأدمن) =================
+
 async function loadStaffList() {
   if (!STATE.apiUrl || STATE.currentUser.role !== 'Admin') return;
   DOM.staffTableBody.innerHTML = '<tr><td colspan="7" class="empty-cell">جاري جلب أحدث بيانات الموظفين...</td></tr>';
@@ -458,6 +533,8 @@ window.manageStaff = async function (userId, actionType) {
     setLoading(false);
   }
 };
+
+// ================= بناء التبويبات وديناميكية النماذج =================
 
 function addColumnRow() {
   const row = document.createElement('div');

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sprinto Headless CMS | منصة إدارة مساحة العمل</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- ================= AUTH CONTAINER (GATEWAY) ================= -->
+  <div class="auth-wrapper" id="authWrapper">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="auth-logo">⚡</span>
+        <h2>سبرينتو كوويركنج سبيس</h2>
+        <p>بوابة الدخول الموحدة للوحة التحكم</p>
+      </div>
+
+      <!-- Auth Tabs -->
+      <div class="auth-tabs">
+        <button class="auth-tab-btn active" id="tabBtnLogin">تسجيل الدخول</button>
+        <button class="auth-tab-btn" id="tabBtnRegister">التقديم كموظف جديد</button>
+      </div>
+
+      <!-- 1. Login Form -->
+      <form class="auth-form active" id="loginForm">
+        <div class="form-group">
+          <label>البريد الإلكتروني</label>
+          <input type="email" id="loginEmail" required placeholder="name@sprinto.com">
+        </div>
+        <div class="form-group">
+          <label>كلمة المرور</label>
+          <input type="password" id="loginPassword" required placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">دخول لوحة التحكم 🚀</button>
+      </form>
+
+      <!-- 2. Staff Application Form -->
+      <form class="auth-form" id="registerForm">
+        <div class="form-group">
+          <label>الاسم بالكامل</label>
+          <input type="text" id="regFullName" required placeholder="مثال: أحمد عبد الله">
+        </div>
+        <div class="form-group">
+          <label>البريد الإلكتروني للعمل</label>
+          <input type="email" id="regEmail" required placeholder="staff@example.com">
+        </div>
+        <div class="form-group">
+          <label>كلمة المرور المقترحة</label>
+          <input type="password" id="regPassword" required placeholder="اختر كلمة مرور قوية">
+        </div>
+        <button type="submit" class="btn btn-secondary btn-block">إرسال طلب الانضمام للمراجعة</button>
+        <p class="auth-note">💡 لن يتم تفعيل الحساب إلا بعد مراجعة وقبول الأدمن من Google Sheets.</p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= DASHBOARD CORE LAYOUT ================= -->
+  <div class="dashboard-layout" id="dashboardLayout" style="display: none;">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-logo">⚡</div>
+        <div class="brand-info">
+          <h2>سبرينتو</h2>
+          <span>Sprinto CMS Core</span>
+        </div>
+      </div>
+
+      <!-- User Profile Badge -->
+      <div class="user-badge-box">
+        <div class="user-avatar" id="userAvatarChar">A</div>
+        <div class="user-details">
+          <strong id="userDisplayName">الأدمن</strong>
+          <span class="user-role-badge" id="userRoleBadge">Admin</span>
+        </div>
+      </div>
+
+      <!-- Action: Add New Custom Tab -->
+      <div class="sidebar-action">
+        <button class="btn btn-create-tab" id="btnOpenTabModal">
+          <span>➕</span> إنشاء تبويب جديد
+        </button>
+      </div>
+
+      <!-- Dynamic Nav Menu -->
+      <nav class="nav-menu" id="dynamicNavMenu">
+        <div class="nav-loading">جاري تحميل الأقسام...</div>
+      </nav>
+
+      <!-- Admin Only Navigation (Staff Management) -->
+      <div class="admin-only-section" id="adminMenuSection" style="display: none;">
+        <span class="nav-label-small">إدارة النظام</span>
+        <button class="nav-item admin-tab-btn" id="btnStaffManagement">
+          <span>👥</span> إدارة الموظفين والطلبات
+        </button>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="nav-item-settings" id="btnSettingsNav">
+          <span>⚙️</span> إعدادات الـ API
+        </button>
+        <button class="btn-logout" id="btnLogout">
+          <span>🚪</span> تسجيل الخروج
+        </button>
+        <div class="status-box mt-3">
+          <span class="status-indicator" id="statusDot"></span>
+          <small id="connectionStatus">متصل ومحمي</small>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-wrapper">
+      <!-- Header -->
+      <header class="topbar">
+        <button class="menu-toggle" id="menuToggle" aria-label="Toggle Navigation">☰</button>
+        <div class="page-title">
+          <h1 id="currentSectionTitle">لوحة التحكم</h1>
+          <p id="currentSectionDesc">حدد قسماً من القائمة الجانبية أو قم بإنشاء تبويب جديد</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-outline" id="btnRefresh">🔄 تحديث البيانات</button>
+        </div>
+      </header>
+
+      <!-- Dynamic Views Container -->
+      <div class="content-container">
+
+        <!-- 1. Staff Management View (ADMIN ONLY) -->
+        <section class="cms-section" id="view-staff-management">
+          <div class="card">
+            <div class="card-header-flex">
+              <div>
+                <h3>👥 إدارة حسابات الموظفين والطلبات الجديدة</h3>
+                <p class="subtitle">الموافقة على طلبات التوظيف المعلقة، أو فصل الموظفين وإيقاف صلاحياتهم فورياً.</p>
+              </div>
+              <button class="btn btn-sm btn-outline" id="btnRefreshStaff">تحديث قائمة الموظفين</button>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" id="staffTable">
+                <thead>
+                  <tr>
+                    <th>المعرف</th>
+                    <th>الاسم</th>
+                    <th>البريد الإلكتروني</th>
+                    <th>الرتبة</th>
+                    <th>الحالة الحالية</th>
+                    <th>تاريخ التسجيل</th>
+                    <th>الإجراءات الإدارية</th>
+                  </tr>
+                </thead>
+                <tbody id="staffTableBody">
+                  <tr>
+                    <td colspan="7" class="empty-cell">جاري تحميل قائمة الموظفين...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Schema Builder (Create New Tab View) -->
+        <section class="cms-section" id="view-schema-builder">
+          <div class="card max-w-xl">
+            <div class="card-header">
+              <h3>🛠️ بناء تبويب وأعمدة جديدة بالكامل</h3>
+              <p class="subtitle">قم بإنشاء جدول جديد في Google Sheets وتحديد أعمدته ونوع بيانات كل عمود بحرية مطلقة.
+              </p>
+            </div>
+
+            <form id="schemaBuilderForm">
+              <div class="form-group">
+                <label>اسم التبويب الجديد (بالعربية أو الإنجليزية) *</label>
+                <input type="text" id="newSheetName" required placeholder="مثال: الشركاء، العروض_الخاصة، الموردين...">
+              </div>
+
+              <div class="columns-builder-box">
+                <div class="columns-header">
+                  <h4>تحديد الأعمدة وأنواعها:</h4>
+                  <button type="button" class="btn btn-sm btn-secondary" id="btnAddColumnRow">➕ إضافة عمود</button>
+                </div>
+
+                <div class="columns-list" id="columnsList">
+                  <div class="column-item-row">
+                    <input type="text" class="col-name" placeholder="اسم العمود (مثال: صورة العرض)" required>
+                    <select class="col-type">
+                      <option value="text">نص عادي (Text)</option>
+                      <option value="textarea">نص طويل / وصف (Paragraph)</option>
+                      <option value="number">رقم (Number)</option>
+                      <option value="image">📁 رفع صورة (تخزين تلقائي على Drive)</option>
+                      <option value="url">رابط ويب أو استمارة (Link)</option>
+                      <option value="date">تاريخ (Date)</option>
+                    </select>
+                    <button type="button" class="btn-remove-col" title="حذف">✕</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-actions mt-4">
+                <button type="submit" class="btn btn-primary btn-block">تأسيس التبويب وحفظه في Google Sheets 🚀</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- 3. Dynamic Content View (Rendered by JS for any clicked tab) -->
+        <section class="cms-section active" id="view-dynamic-content">
+          <div class="grid-layout">
+
+            <!-- Left: Dynamic Form -->
+            <div class="card form-card">
+              <h3 id="formSectionTitle">إضافة سجل جديد</h3>
+              <form id="dynamicRecordForm">
+                <div id="dynamicFormFields">
+                  <!-- Fields injected dynamically -->
+                </div>
+                <button type="submit" class="btn btn-primary mt-3 btn-block">حفظ السجل في الجدول</button>
+              </form>
+            </div>
+
+            <!-- Right: Dynamic Table -->
+            <div class="card data-card">
+              <div class="card-header-flex">
+                <h3 id="tableSectionTitle">السجلات الحالية</h3>
+                <span class="badge" id="recordCountBadge">0 سجل</span>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table" id="dynamicDataTable">
+                  <thead id="dynamicTableHead"></thead>
+                  <tbody id="dynamicTableBody">
+                    <tr>
+                      <td class="empty-cell">قم باختيار قسم من القائمة لبدء العرض</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 4. Settings View -->
+        <section class="cms-section" id="view-settings">
+          <div class="card form-card max-w-lg">
+            <h3>⚙️ ربط الـ Google Apps Script API</h3>
+            <p class="subtitle">الصق رابط Web App URL لتفعيل المزامنة المباشرة مع Google Sheets وDrive.</p>
+            <form id="apiSettingsForm">
+              <div class="form-group">
+                <label>رابط الـ Web App</label>
+                <input type="url" id="apiUrlInput" required
+                  placeholder="https://script.google.com/macros/s/AKfycb.../exec">
+              </div>
+              <div class="button-group">
+                <button type="submit" class="btn btn-primary">حفظ الرابط</button>
+                <button type="button" class="btn btn-outline" id="btnTestApi">اختبار الاتصال</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <span id="loadingMessage">جاري التحقق والمعالجة...</span>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
